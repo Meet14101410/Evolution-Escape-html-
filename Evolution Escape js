@@ -1,0 +1,41 @@
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+
+let keys = {};
+let player, orbs, enemies, score, stage, over;
+
+function rnd(a,b){ return Math.random()*(b-a)+a; }
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+function reset(){
+  player = {x:W/2, y:H/2, r:12, s:2.6};
+  orbs = []; enemies = [];
+  score = 0; stage = 1; over = false;
+  spawnOrbs(6); spawnEnemies(2);
+}
+
+function spawnOrbs(n){
+  while(n--) orbs.push({x:rnd(20,W-20), y:rnd(20,H-20), r:6});
+}
+function spawnEnemies(n){
+  while(n--) enemies.push({x:rnd(20,W-20), y:rnd(20,H-20), r:15, s:0.7});
+}
+
+function nextStage(){
+  stage++; player.r+=1.5; player.s+=0.1;
+  spawnOrbs(4); spawnEnemies(1);
+}
+
+function update(dt){
+  if(over) return;
+
+  // movement
+  let vx = (keys.a||keys.ArrowLeft?-1:0) + (keys.d||keys.ArrowRight?1:0);
+  let vy = (keys.w||keys.ArrowUp?-1:0) + (keys.s||keys.ArrowDown?1:0);
+  if(vx||vy){
+    let m = Math.hypot(vx,vy);
+    player.x += (vx/m)*player.s*dt;
+    player.y += (vy/m)*player.s*dt;
+  }
+  player.x = Math.max(player.r, Math.min(W-player.r, player
