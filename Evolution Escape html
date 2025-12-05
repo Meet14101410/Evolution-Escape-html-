@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Evolution Escape — Mini Game</title>
+<style>
+  :root{--bg:#0f1724;--panel:#0b1220;--accent:#16a34a;--danger:#ef4444;color-scheme:dark}
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial}
+  body{margin:0;background:linear-gradient(180deg,var(--bg),#071029);display:flex;align-items:center;justify-content:center;height:100vh}
+  .card{width:820px;max-width:96vw;border-radius:12px;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);box-shadow:0 6px 30px rgba(2,6,23,.6);color:#dbeafe}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  h1{font-size:18px;margin:0}
+  .hud{display:flex;gap:12px;align-items:center;font-size:14px;opacity:.95}
+  canvas{display:block;width:100%;background:linear-gradient(180deg,#04202f 0%, #0b2430 100%);border-radius:8px}
+  .controls{margin-top:8px;font-size:13px;opacity:.9}
+  .small{font-size:12px;opacity:.7}
+  button{background:#0b1220;border:1px solid rgba(255,255,255,.04);padding:6px 10px;border-radius:8px;color:#cde;cursor:pointer}
+  button:active{transform:translateY(1px)}
+  .center{display:flex;gap:8px;align-items:center}
+</style>
+</head>
+<body>
+<div class="card" role="application" aria-label="Evolution Escape mini game">
+  <header>
+    <h1>Evolution Escape</h1>
+    <div class="hud">
+      <div id="score">Score: 0</div>
+      <div id="stage">Stage: 1</div>
+      <div class="small">Collect mutations — avoid predators</div>
+      <div style="width:12px"></div>
+      <div class="center"><button id="restart">Restart</button></div>
+    </div>
+  </header>
+
+  <canvas id="game" width="800" height="450" tabindex="0"></canvas>
+  <div class="controls small">Move: ← → ↑ ↓ or WASD · Collect green orbs to evolve · Red enemies chase you</div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  let keys = {};
+  let scoreEl = document.getElementById('score');
+  let stageEl = document.getElementById('stage');
+  let restartBtn = document.getElementById('restart');
+
+  function rnd(min, max){ return Math.random()*(max-min)+min; }
+  function dist(a,b){ let dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
+
+  const state = {
+    player: {x: W/2, y: H/2, r: 12, speed: 2.6},
+    orbs: [],
+    enemies: [],
+    score: 0,
+    stage: 1,
+    over: false,
+    tick: 0
+  };
+
+  function spawnOrbs(n){
+    for(let i=0;i<n;i++){
+      state.orbs.push({x:rnd(20,W-20), y:rnd(20,H-20), r:6});
+    }
+  }
+  function spawnEnemies(n){
+    for(let i=0;i<n;i++){
+      state.enemies.push({
+        x: rnd(20,W-20), y: rnd(20,H-20),
+        r: 14 + Math.random()*8,
+        speed: 0.6 + Math.random()*0.9,
+      });
+    }
+  }
+
+  function reset(){
+    state.player = {x: W/2, y: H/2, r: 12, speed: 2.6};
+    state.orbs = []; state.enemies = [];
+    state.score = 0; state.stage = 1; state.over = false; state.tick = 0;
+    spawnOrbs(6); spawnEnemies(2);
+    updateHUD();
+  }
+
+  function nextStage(){
+    state.stage++;
+    // small increases
+    state.player.r += 1.6;
+    state.player.speed += 0.15;
+    spawnOrbs(4 + Math.floor(state.stage/2));
+    spawnEnemies(1 + Math.floor(state.stage/2));
+    updateHUD();
+  }
+
+  function updateHUD(){
+    scoreEl.textContent = 'Score: ' + state.score;
+    stageEl.textContent = 'Stage: ' + state.stage;
+  }
+
+  function update(dt){
+    if(state.over) return;
+    state.tick += dt;
+    // movement
+    const p = state.player;
+    let vx=0, vy=0;
+    if(keys.ArrowLeft || keys.a) vx -= 1;
+    if(keys.ArrowRight || keys.d) vx += 1;
+    if(keys.ArrowUp || keys.w) vy -= 1;
+    if(keys.ArrowDown || keys.s) vy += 1;
+    if(vx||vy){
+      const m = Math.hypot(vx,vy) || 1;
+      p.x += (vx/m) * p.speed * dt;
+      p.y += (vy/m) * p.speed * dt;
+    }
+    // clamp
+    p.x = Math.max(p.r, Math.min(W - p.r, p.x));
+    p.y = Math.max(p.r, Math.min(H - p.r, p.y));
+
+    // enemies chase player
+    for(const e of state.enemies){
+      const angle = Math.atan2(p.y - e.y, p.x - e.x);
+      e.x += Math.cos(angle) * e.speed * dt;
+      e.y += Math.sin(angle) * e.speed * dt;
+    }
+
+    // collect orbs
+    for(let i=state.orbs.length-1;i>=0;i--){
+      if(dist(p, state.orbs[i]) < p.r + state.orbs[i].r){
+        state.orbs.splice(i,1);
+        state.score += 10;
+        p.r += 0.6; // evolve (grow)
+        p.speed += 0.05;
+        if(state.score % 50 === 0) nextStage();
+        updateHUD();
+      }
+    }
+
+    // enemy collisions -> game over
+    for(const e of state.enemies){
+      if(dist(p,e) < p.r + e.r - 2){
+        // if player bigger than enemy, defeat it
+        if(p.r > e.r * 1.05){
+          // devour enemy
+          state.score += 20;
+          p.r += e.r * 0.18;
+          const idx = state.enemies.indexOf(e);
+          if(idx!==-1) state.enemies.splice(idx,1);
+          updateHUD();
+        } else {
+          state.over = true;
+        }
+      }
+    }
+
+    // if orb count low spawn more slowly
+    if(state.orbs.length < 3 && Math.random() < 0.02) spawnOrbs(1);
+    // gentle enemy spawn over time
+    if(state.tick > 600 && Math.random() < 0.01){
+      spawnEnemies(1);
+      state.tick = 0;
+    }
+  }
+
+  function draw(){
+    // background
+    ctx.clearRect(0,0,W,H);
+
+    // subtle grid
+    ctx.save();
+    ctx.globalAlpha = 0.06;
+    ctx.strokeStyle = '#9fb0';
+    for(let x=0;x<W;x+=40){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+    for(let y=0;y<H;y+=40){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    ctx.restore();
+
+    // orbs (mutations)
+    for(const o of state.orbs){
+      ctx.beginPath();
+      ctx.fillStyle = '#31c48d';
+      ctx.arc(o.x,o.y,o.r,0,Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.arc(o.x-2,o.y-2,o.r*0.45,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // enemies
+    for(const e of state.enemies){
+      ctx.beginPath();
+      ctx.fillStyle = '#ff6b6b';
+      ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
+      ctx.fill();
+      // eye
+      ctx.beginPath();
+      const ex = e.x + Math.cos((Date.now()/300 + e.x) / 20) * (e.r*0.2);
+      const ey = e.y + Math.sin((Date.now()/300 + e.y) / 20) * (e.r*0.15);
+      ctx.fillStyle = '#111';
+      ctx.arc(ex,ey,e.r*0.22,0,Math.PI*2);
+      ctx.fill();
+    }
+
+    // player
+    const p = state.player;
+    ctx.beginPath();
+    ctx.fillStyle = '#60a5fa';
+    ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fill();
+    // highlight
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.arc(p.x - p.r*0.25, p.y - p.r*0.28, Math.max(2, p.r*0.4), 0, Math.PI*2);
+    ctx.fill();
+
+    // Game Over overlay
+    if(state.over){
+      ctx.fillStyle = 'rgba(2,6,23,0.6)';
+      ctx.fillRect(0,0,W,H);
+      ctx.fillStyle = '#ffdada';
+      ctx.font = '28px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Evolution halted — Game Over', W/2, H/2 - 8);
+      ctx.font = '16px system-ui, sans-serif';
+      ctx.fillText('Press Restart to try again — Score: ' + state.score, W/2, H/2 + 22);
+    }
+  }
+
+  // game loop (fixed timestep-ish)
+  let last = performance.now();
+  function loop(t){
+    const dt = Math.min(40, t - last) / 16.67; // normalize to ~60fps steps
+    update(dt);
+    draw();
+    last = t;
+    requestAnimationFrame(loop);
+  }
+
+  // input
+  window.addEventListener('keydown', e => { keys[e.key] = true; });
+  window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+  // restart button
+  restartBtn.addEventListener('click', () => {
+    reset();
+    canvas.focus();
+  });
+
+  // start
+  reset();
+  canvas.focus();
+  requestAnimationFrame(loop);
+
+  // small accessibility: focus canvas to capture keys when clicked
+  canvas.addEventListener('click', ()=> canvas.focus());
+})();
+</script>
+</body>
+</html>
